@@ -36,8 +36,8 @@
 #define ML307_RX_PIN            GPIO_NUM_16
 #define ML307_TX_PIN            GPIO_NUM_17
 
-#define DISPLAY_SDA_PIN GPIO_NUM_4
-#define DISPLAY_SCL_PIN GPIO_NUM_15
+#define DISPLAY_SDA_PIN GPIO_NUM_21
+#define DISPLAY_SCL_PIN GPIO_NUM_22
 #define DISPLAY_WIDTH   128
 
 #if CONFIG_OLED_SSD1306_128X32
@@ -52,7 +52,9 @@
 #define DISPLAY_MIRROR_Y true
 
 
-// A MCP Test: Control a lamp
-#define LAMP_GPIO GPIO_NUM_18
+// A MCP Test: Control a lamp and Servo
+#define LAMP_GPIO  GPIO_NUM_18
+#define SERVO_GPIO GPIO_NUM_13
 
 #endif // _BOARD_CONFIG_H_
+
