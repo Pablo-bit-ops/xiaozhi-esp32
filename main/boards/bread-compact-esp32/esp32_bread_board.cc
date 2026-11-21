@@ -11,10 +11,66 @@
 
 #include <esp_log.h>
 #include <driver/i2c_master.h>
+#include <driver/ledc.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
 
 #define TAG "ESP32-MarsbearSupport"
+
+class ServoController {
+private:
+    int current_angle_ = 90;
+
+    uint32_t AngleToDuty(int angle) {
+        uint32_t min_duty = 410;
+        uint32_t max_duty = 2048;
+        return min_duty + ((max_duty - min_duty) * angle) / 180;
+    }
+
+public:
+    ServoController(gpio_num_t gpio_num) {
+        ledc_timer_config_t ledc_timer = {
+            .speed_mode       = LEDC_LOW_SPEED_MODE,
+            .duty_resolution  = LEDC_TIMER_14_BIT,
+            .timer_num        = LEDC_TIMER_1,
+            .freq_hz          = 50,
+            .clk_cfg          = LEDC_AUTO_CLK
+        };
+        ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+
+        ledc_channel_config_t ledc_channel = {
+            .gpio_num       = gpio_num,
+            .speed_mode     = LEDC_LOW_SPEED_MODE,
+            .channel        = LEDC_CHANNEL_1,
+            .intr_type      = LEDC_INTR_DISABLE,
+            .timer_sel      = LEDC_TIMER_1,
+            .duty           = AngleToDuty(90),
+            .hpoint         = 0
+        };
+        ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
+
+        auto& mcp_server = McpServer::GetInstance();
+        mcp_server.AddTool("self.servo.set_angle",
+            "Mueve el servomotor a un ángulo específico entre 0 y 180 grados.",
+            PropertyList({
+                Property("angle", kPropertyTypeInteger, 0, 180)
+            }),
+            [this](const PropertyList& properties) -> ReturnValue {
+                int angle = properties["angle"].value<int>();
+                SetAngle(angle);
+                return "{\"status\": \"ok\", \"angle\": " + std::to_string(current_angle_) + "}";
+            });
+    }
+
+    void SetAngle(int angle) {
+        if (angle < 0) angle = 0;
+        if (angle > 180) angle = 180;
+        current_angle_ = angle;
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, AngleToDuty(current_angle_));
+        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
+        ESP_LOGI(TAG, "Servo movido a %d grados", current_angle_);
+    }
+};
 
 class CompactWifiBoard : public WifiBoard {
 private:
@@ -130,6 +186,7 @@ private:
     // 物联网初始化，添加对 AI 可见设备
     void InitializeTools() {
         static LampController lamp(LAMP_GPIO);
+        static ServoController servo(SERVO_GPIO);
     }
 
 public:
@@ -160,3 +217,4 @@ public:
 };
 
 DECLARE_BOARD(CompactWifiBoard);
+
