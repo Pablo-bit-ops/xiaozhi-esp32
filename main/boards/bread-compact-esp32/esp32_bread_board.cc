@@ -275,7 +275,6 @@ public:
             AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN);
 #endif
         return &audio_codec;
-Usa el código con precaución.
 }
 virtual Display* GetDisplay() override {
 return display_;
