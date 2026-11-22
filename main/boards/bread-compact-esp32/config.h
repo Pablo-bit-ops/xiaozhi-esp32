@@ -52,7 +52,11 @@
 #define DISPLAY_MIRROR_Y true
 
 
-// A MCP Test: Control a lamp
-#define LAMP_GPIO GPIO_NUM_18
+// A MCP Test: Control a lamp, Servo and RGB LED
+#define LAMP_GPIO       GPIO_NUM_18
+#define SERVO_GPIO      GPIO_NUM_13
+#define LED_RGB_R_GPIO  GPIO_NUM_16
+#define LED_RGB_G_GPIO  GPIO_NUM_17
+#define LED_RGB_B_GPIO  GPIO_NUM_23
 
 #endif // _BOARD_CONFIG_H_
