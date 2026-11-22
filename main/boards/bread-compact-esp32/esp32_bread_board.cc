@@ -11,10 +11,132 @@
 
 #include <esp_log.h>
 #include <driver/i2c_master.h>
+#include <driver/ledc.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
 
 #define TAG "ESP32-MarsbearSupport"
+
+class ServoController {
+private:
+    int current_angle_ = 90;
+
+    uint32_t AngleToDuty(int angle) {
+        uint32_t min_duty = 410;
+        uint32_t max_duty = 2048;
+        return min_duty + ((max_duty - min_duty) * angle) / 180;
+    }
+
+public:
+    ServoController(gpio_num_t gpio_num) {
+        ledc_timer_config_t ledc_timer = {
+            .speed_mode       = LEDC_LOW_SPEED_MODE,
+            .duty_resolution  = LEDC_TIMER_14_BIT,
+            .timer_num        = LEDC_TIMER_1,
+            .freq_hz          = 50,
+            .clk_cfg          = LEDC_AUTO_CLK
+        };
+        ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+
+        ledc_channel_config_t ledc_channel = {
+            .gpio_num       = gpio_num,
+            .speed_mode     = LEDC_LOW_SPEED_MODE,
+            .channel        = LEDC_CHANNEL_1,
+            .intr_type      = LEDC_INTR_DISABLE,
+            .timer_sel      = LEDC_TIMER_1,
+            .duty           = AngleToDuty(90),
+            .hpoint         = 0
+        };
+        ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
+
+        auto& mcp_server = McpServer::GetInstance();
+        mcp_server.AddTool("self.servo.set_angle",
+            "Mueve el servomotor a un ángulo específico entre 0 y 180 grados.",
+            PropertyList({
+                Property("angle", kPropertyTypeInteger, 0, 180)
+            }),
+            [this](const PropertyList& properties) -> ReturnValue {
+                int angle = properties["angle"].value<int>();
+                SetAngle(angle);
+                return "{\"status\": \"ok\", \"angle\": " + std::to_string(current_angle_) + "}";
+            });
+    }
+
+    void SetAngle(int angle) {
+        if (angle < 0) angle = 0;
+        if (angle > 180) angle = 180;
+        current_angle_ = angle;
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, AngleToDuty(current_angle_));
+        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
+        ESP_LOGI(TAG, "Servo movido a %d grados", current_angle_);
+    }
+};
+
+class RgbLedController {
+private:
+    int r_ = 0, g_ = 0, b_ = 0;
+
+public:
+    RgbLedController(gpio_num_t pin_r, gpio_num_t pin_g, gpio_num_t pin_b) {
+        ledc_timer_config_t rgb_timer = {
+            .speed_mode       = LEDC_LOW_SPEED_MODE,
+            .duty_resolution  = LEDC_TIMER_8_BIT,
+            .timer_num        = LEDC_TIMER_2,
+            .freq_hz          = 5000,
+            .clk_cfg          = LEDC_AUTO_CLK
+        };
+        ESP_ERROR_CHECK(ledc_timer_config(&rgb_timer));
+
+        gpio_num_t pins[3] = {pin_r, pin_g, pin_b};
+        ledc_channel_t channels[3] = {LEDC_CHANNEL_2, LEDC_CHANNEL_3, LEDC_CHANNEL_4};
+
+        for (int i = 0; i < 3; i++) {
+            ledc_channel_config_t ch = {
+                .gpio_num       = pins[i],
+                .speed_mode     = LEDC_LOW_SPEED_MODE,
+                .channel        = channels[i],
+                .intr_type      = LEDC_INTR_DISABLE,
+                .timer_sel      = LEDC_TIMER_2,
+                .duty           = 0,
+                .hpoint         = 0
+            };
+            ESP_ERROR_CHECK(ledc_channel_config(&ch));
+        }
+
+        auto& mcp_server = McpServer::GetInstance();
+        mcp_server.AddTool("self.rgb_led.set_color",
+            "Cambia el color del LED RGB indicando los valores de rojo (r), verde (g) y azul (b) de 0 a 255.",
+            PropertyList({
+                Property("r", kPropertyTypeInteger, 0, 255),
+                Property("g", kPropertyTypeInteger, 0, 255),
+                Property("b", kPropertyTypeInteger, 0, 255)
+            }),
+            [this](const PropertyList& properties) -> ReturnValue {
+                int r = properties["r"].value<int>();
+                int g = properties["g"].value<int>();
+                int b = properties["b"].value<int>();
+                SetColor(r, g, b);
+                return "{\"status\": \"ok\", \"r\": " + std::to_string(r_) + ", \"g\": " + std::to_string(g_) + ", \"b\": " + std::to_string(b_) + "}";
+            });
+    }
+
+    void SetColor(int r, int g, int b) {
+        r_ = (r < 0) ? 0 : (r > 255 ? 255 : r);
+        g_ = (g < 0) ? 0 : (g > 255 ? 255 : g);
+        b_ = (b < 0) ? 0 : (b > 255 ? 255 : b);
+
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, r_);
+        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2);
+
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3, g_);
+        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_3);
+
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_4, b_);
+        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_4);
+
+        ESP_LOGI(TAG, "LED RGB cambiado a R:%d G:%d B:%d", r_, g_, b_);
+    }
+};
 
 class CompactWifiBoard : public WifiBoard {
 private:
@@ -130,6 +252,8 @@ private:
     // 物联网初始化，添加对 AI 可见设备
     void InitializeTools() {
         static LampController lamp(LAMP_GPIO);
+        static ServoController servo(SERVO_GPIO);
+        static RgbLedController rgb_led(LED_RGB_R_GPIO, LED_RGB_G_GPIO, LED_RGB_B_GPIO);
     }
 
 public:
@@ -151,12 +275,10 @@ public:
             AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN);
 #endif
         return &audio_codec;
-    }
-
-    virtual Display* GetDisplay() override {
-        return display_;
-    }
-
+Usa el código con precaución.
+}
+virtual Display* GetDisplay() override {
+return display_;
+}
 };
-
 DECLARE_BOARD(CompactWifiBoard);
