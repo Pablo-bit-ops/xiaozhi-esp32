@@ -25,7 +25,6 @@
 
 #define TAG "ESP32-WebPortal"
 
-// Página web completa con Login, Animación del Cuadrado con Ojos que Gira, Chat y Panel del Jefe
 static const char* PORTAL_HTML = R"rawliteral(
 <!DOCTYPE html>
 <html lang="es">
@@ -46,7 +45,6 @@ static const char* PORTAL_HTML = R"rawliteral(
   button.secondary { background: #334155; color: #fff; margin-top: 8px; }
   .hidden { display: none !important; }
 
-  /* Animación del cuadrado con ojos que salen de dentro y gira */
   #animScreen { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 99; }
   .bot-square {
     width: 110px; height: 110px; background: linear-gradient(135deg, #38bdf8, #6366f1);
@@ -71,7 +69,6 @@ static const char* PORTAL_HTML = R"rawliteral(
     100% { transform: scale(1) rotate(360deg); }
   }
 
-  /* Chat estilo ChatGPT */
   .chat-wrap { width: 95%; max-width: 720px; height: 90vh; background: var(--card); border-radius: 18px; display: flex; flex-direction: column; overflow: hidden; }
   .topbar { padding: 14px 18px; background: #0b1120; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
   .badge { background: #f59e0b; color: #000; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 800; }
@@ -91,7 +88,6 @@ static const char* PORTAL_HTML = R"rawliteral(
 </head>
 <body>
 
-<!-- PANTALLA 1: LOGIN -->
 <div id="loginScreen" class="box">
   <h2>Acceso a Xiaozhi AI</h2>
   <label>Correo electrónico</label>
@@ -103,7 +99,6 @@ static const char* PORTAL_HTML = R"rawliteral(
   <button onclick="doLogin()">Entrar</button>
 </div>
 
-<!-- PANTALLA 2: ANIMACIÓN DEL CUADRADO CON OJOS QUE GIRA -->
 <div id="animScreen" class="hidden">
   <div class="bot-square">
     <div class="bot-eye"></div>
@@ -112,7 +107,6 @@ static const char* PORTAL_HTML = R"rawliteral(
   <p style="margin-top:22px; color:#38bdf8; font-weight:600;">Iniciando sistema...</p>
 </div>
 
-<!-- PANTALLA 3: CHAT Y PANEL DEL JEFE -->
 <div id="appScreen" class="chat-wrap hidden">
   <div class="topbar">
     <div>
@@ -126,7 +120,6 @@ static const char* PORTAL_HTML = R"rawliteral(
     </div>
   </div>
 
-  <!-- Vista Chat -->
   <div id="chatView" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
     <div id="messages" class="messages"></div>
     <div class="input-row">
@@ -135,7 +128,6 @@ static const char* PORTAL_HTML = R"rawliteral(
     </div>
   </div>
 
-  <!-- Vista Panel del Jefe -->
   <div id="bossView" class="boss-panel hidden">
     <h3 style="margin-top:0;color:#f59e0b;">Historial de todos los usuarios</h3>
     <button class="secondary" style="margin-bottom:14px;" onclick="loadAllLogs()">Actualizar conversaciones</button>
@@ -234,16 +226,16 @@ async function sendMsg() {
   if (apiKey) {
     try {
       const isGroq = apiKey.startsWith('gsk_');
+      const url = isGroq ? 'https://groq.com' : 'https://openai.com';
+      const model = isGroq ? 'llama-3.1-8b-instant' : 'gpt-4o-mini';
+      const aiRes = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey},
 Usa el código con precaución.
-const url = isGroq ? 'groq.com' : 'openai.com';
-const model = isGroq ? 'llama-3.1-8b-instant' : 'gpt-4o-mini';
-const aiRes = await fetch(url, {
-method: 'POST',
-headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey},
 body: JSON.stringify({model, messages: [{role: 'user', content: q}]})
 });
 const aiJson = await aiRes.json();
-if (aiJson.choices && aiJson.choices[0]) {
+if (aiJson.choices && aiJson.choices.length > 0) {
 answer = aiJson.choices[0].message.content;
 }
 } catch (e) {
@@ -336,7 +328,7 @@ httpd_resp_set_type(req, "text/html");
 return httpd_resp_send(req, PORTAL_HTML, HTTPD_RESP_USE_STRLEN);
 }
 static esp_err_t LoginPostHandler(httpd_req_t* req) {
-char buf[512];
+char buf[256];
 int len = httpd_req_recv(req, buf, std::min((size_t)req->content_len, sizeof(buf) - 1));
 if (len <= 0) return ESP_FAIL;
 buf[len] = '\0';
