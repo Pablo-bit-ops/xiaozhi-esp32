@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <functional>
 
 #define TAG "ESP32-WebPortal"
 
@@ -39,7 +40,7 @@ static const char* PORTAL_HTML = R"rawliteral(
   .box { background: var(--card); padding: 28px; border-radius: 18px; width: 92%; max-width: 460px; box-shadow: 0 20px 40px rgba(0,0,0,0.45); }
   h2 { margin-top: 0; text-align: center; color: var(--accent); }
   label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
-  input, select { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 15px; outline: none; }
+  input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 15px; outline: none; }
   input:focus { border-color: var(--accent); }
   button { width: 100%; padding: 13px; margin-top: 18px; border: none; border-radius: 10px; background: var(--accent); color: #0f172a; font-weight: 700; font-size: 16px; cursor: pointer; }
   button.secondary { background: #334155; color: #fff; margin-top: 8px; }
@@ -236,7 +237,7 @@ body: JSON.stringify({model, messages: [{role: 'user', content: q}]})
 });
 const aiJson = await aiRes.json();
 if (aiJson.choices && aiJson.choices.length > 0) {
-answer = aiJson.choices[0].message.content;
+answer = aiJson.choices.at(0).message.content;
 }
 } catch (e) {
 answer = "Error conectando con la API de IA.";
@@ -282,7 +283,7 @@ size_t q1 = body.find('"', colon + 1);
 if (q1 == std::string::npos) return "";
 size_t q2 = q1 + 1;
 while (q2 < body.size()) {
-if (body[q2] == '"' && body[q2 - 1] != '\') break;
+if (body.at(q2) == '"' && body.at(q2 - 1) != '\') break;
 q2++;
 }
 if (q2 >= body.size()) return "";
@@ -305,7 +306,7 @@ if (nvs_open("web_chat", NVS_READONLY, &handle) != ESP_OK) return;
 size_t required_size = 0;
 if (nvs_get_str(handle, "logs", nullptr, &required_size) == ESP_OK && required_size > 1) {
 std::string buf(required_size, '\0');
-if (nvs_get_str(handle, "logs", &buf[0], &required_size) == ESP_OK) {
+if (nvs_get_str(handle, "logs", buf.data(), &required_size) == ESP_OK) {
 g_chat_logs.clear();
 size_t start = 0;
 while (start < buf.size()) {
@@ -328,11 +329,14 @@ httpd_resp_set_type(req, "text/html");
 return httpd_resp_send(req, PORTAL_HTML, HTTPD_RESP_USE_STRLEN);
 }
 static esp_err_t LoginPostHandler(httpd_req_t* req) {
-char buf[256];
-int len = httpd_req_recv(req, buf, std::min((size_t)req->content_len, sizeof(buf) - 1));
-if (len <= 0) return ESP_FAIL;
-buf[len] = '\0';
-std::string body(buf);
+std::string body;
+body.resize(req->content_len);
+int received = 0;
+while (received < req->content_len) {
+int r = httpd_req_recv(req, body.data() + received, req->content_len - received);
+if (r <= 0) return ESP_FAIL;
+received += r;
+}
 std::string pass = ExtractJsonField(body, "pass");
 std::string clean_pass;
 for (char c : pass) {
@@ -348,7 +352,7 @@ std::string body;
 body.resize(req->content_len);
 int received = 0;
 while (received < req->content_len) {
-int r = httpd_req_recv(req, &body[received], req->content_len - received);
+int r = httpd_req_recv(req, body.data() + received, req->content_len - received);
 if (r <= 0) return ESP_FAIL;
 received += r;
 }
@@ -370,9 +374,9 @@ static esp_err_t LogsGetHandler(httpd_req_t* req) {
 std::string json = "[";
 for (size_t i = 0; i < g_chat_logs.size(); i++) {
 if (i > 0) json += ",";
-json += "{"email":"" + EscapeJson(g_chat_logs[i].email) + "","
-""q":"" + EscapeJson(g_chat_logs[i].q) + "","
-""a":"" + EscapeJson(g_chat_logs[i].a) + ""}";
+json += "{"email":"" + EscapeJson(g_chat_logs.at(i).email) + "","
+""q":"" + EscapeJson(g_chat_logs.at(i).q) + "","
+""a":"" + EscapeJson(g_chat_logs.at(i).a) + ""}";
 }
 json += "]";
 httpd_resp_set_type(req, "application/json");
@@ -395,6 +399,16 @@ httpd_register_uri_handler(g_httpd, &logs_uri);
 ESP_LOGI(TAG, "Portal web iniciado en puerto 80");
 }
 }
+static ReturnValue HandleGetIpTool(const PropertyList& properties) {
+esp_netif_t* netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+esp_netif_ip_info_t ip_info;
+if (netif && esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
+std::string ip_buf(32, '\0');
+esp_ip4addr_ntoa(&ip_info.ip, ip_buf.data(), 32);
+return std::string("{"ip": "") + ip_buf.c_str() + ""}";
+}
+return "{"ip": "desconectado"}";
+}
 class ServoController {
 private:
 int current_angle_ = 90;
@@ -402,6 +416,11 @@ uint32_t AngleToDuty(int angle) {
 uint32_t min_duty = 410;
 uint32_t max_duty = 2048;
 return min_duty + ((max_duty - min_duty) * angle) / 180;
+}
+ReturnValue HandleSetAngleTool(const PropertyList& properties) {
+int angle = properties.at("angle").value();
+SetAngle(angle);
+return "{"status": "ok", "angle": " + std::to_string(current_angle_) + "}";
 }
 public:
 ServoController(gpio_num_t gpio_num) {
@@ -429,24 +448,11 @@ mcp_server.AddTool("self.servo.set_angle",
 PropertyList({
 Property("angle", kPropertyTypeInteger, 0, 180)
 }),
-[this](const PropertyList& properties) -> ReturnValue {
-int angle = properties["angle"].value();
-SetAngle(angle);
-return "{"status": "ok", "angle": " + std::to_string(current_angle_) + "}";
-});
+std::bind(&ServoController::HandleSetAngleTool, this, std::placeholders::_1));
 mcp_server.AddTool("self.network.get_ip",
 "Devuelve la dirección IP actual del ESP32 para abrir su página web desde el móvil o PC.",
 PropertyList(),
-[](const PropertyList& properties) -> ReturnValue {
-esp_netif_t* netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-esp_netif_ip_info_t ip_info;
-if (netif && esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
-char ip_str[16];
-esp_ip4addr_ntoa(&ip_info.ip, ip_str, sizeof(ip_str));
-return std::string("{"ip": "") + ip_str + ""}";
-}
-return "{"ip": "desconectado"}";
-});
+HandleGetIpTool);
 }
 void SetAngle(int angle) {
 if (angle < 0) angle = 0;
@@ -517,6 +523,27 @@ ESP_LOGI(TAG, "Turning display on");
 ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
 display_ = new OledDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
 }
+void OnBootButtonClick() {
+auto& app = Application::GetInstance();
+if (app.GetDeviceState() == kDeviceStateStarting) {
+EnterWifiConfigMode();
+return;
+}
+gpio_set_level(BUILTIN_LED_GPIO, 1);
+app.ToggleChatState();
+}
+void OnAsrButtonClick() {
+std::string wake_word = "你好小智";
+Application::GetInstance().WakeWordInvoke(wake_word);
+}
+void OnTouchPressDown() {
+gpio_set_level(BUILTIN_LED_GPIO, 1);
+Application::GetInstance().StartListening();
+}
+void OnTouchPressUp() {
+gpio_set_level(BUILTIN_LED_GPIO, 0);
+Application::GetInstance().StopListening();
+}
 void InitializeButtons() {
 gpio_config_t io_conf = {
 .pin_bit_mask = 1ULL << BUILTIN_LED_GPIO,
@@ -526,27 +553,10 @@ gpio_config_t io_conf = {
 .intr_type = GPIO_INTR_DISABLE
 };
 gpio_config(&io_conf);
-boot_button_.OnClick(this {
-auto& app = Application::GetInstance();
-if (app.GetDeviceState() == kDeviceStateStarting) {
-EnterWifiConfigMode();
-return;
-}
-gpio_set_level(BUILTIN_LED_GPIO, 1);
-app.ToggleChatState();
-});
-asr_button_.OnClick(this {
-std::string wake_word="你好小智";
-Application::GetInstance().WakeWordInvoke(wake_word);
-});
-touch_button_.OnPressDown(this {
-gpio_set_level(BUILTIN_LED_GPIO, 1);
-Application::GetInstance().StartListening();
-});
-touch_button_.OnPressUp(this {
-gpio_set_level(BUILTIN_LED_GPIO, 0);
-Application::GetInstance().StopListening();
-});
+boot_button_.OnClick(std::bind(&CompactWifiBoard::OnBootButtonClick, this));
+asr_button_.OnClick(std::bind(&CompactWifiBoard::OnAsrButtonClick, this));
+touch_button_.OnPressDown(std::bind(&CompactWifiBoard::OnTouchPressDown, this));
+touch_button_.OnPressUp(std::bind(&CompactWifiBoard::OnTouchPressUp, this));
 }
 void InitializeTools() {
 static LampController lamp(LAMP_GPIO);
