@@ -265,16 +265,16 @@ static httpd_handle_t g_httpd = nullptr;
 static std::string EscapeJson(const std::string& s) {
 std::string out;
 for (char c : s) {
-if (c == '"') out += "\"";
-else if (c == '\') out += "\\";
-else if (c == '\n') out += " ";
+if (c == '"') out += ''';
+else if (c == '\') out += '/';
+else if (c == '\n') out += ' ';
 else if (c == '\r') continue;
 else out += c;
 }
 return out;
 }
 static std::string ExtractJsonField(const std::string& body, const std::string& key) {
-std::string pattern = """ + key + """;
+std::string pattern = std::string(1, '"') + key + std::string(1, '"');
 size_t pos = body.find(pattern);
 if (pos == std::string::npos) return "";
 size_t colon = body.find(':', pos + pattern.size());
@@ -344,7 +344,7 @@ if (c != ' ') clean_pass += c;
 }
 bool is_boss = (clean_pass == "090807060504030201");
 httpd_resp_set_type(req, "application/json");
-std::string resp = std::string("{"status":"ok","is_boss":") + (is_boss ? "true}" : "false}");
+std::string resp = is_boss ? R"json({"status":"ok","is_boss":true})json" : R"json({"status":"ok","is_boss":false})json";
 return httpd_resp_send(req, resp.c_str(), HTTPD_RESP_USE_STRLEN);
 }
 static esp_err_t SavePostHandler(httpd_req_t* req) {
@@ -368,15 +368,15 @@ g_chat_logs.erase(g_chat_logs.begin());
 SaveLogsToNvs();
 }
 httpd_resp_set_type(req, "application/json");
-return httpd_resp_send(req, "{"status":"saved"}", HTTPD_RESP_USE_STRLEN);
+return httpd_resp_send(req, R"json({"status":"saved"})json", HTTPD_RESP_USE_STRLEN);
 }
 static esp_err_t LogsGetHandler(httpd_req_t* req) {
 std::string json = "[";
 for (size_t i = 0; i < g_chat_logs.size(); i++) {
 if (i > 0) json += ",";
-json += "{"email":"" + EscapeJson(g_chat_logs.at(i).email) + "","
-""q":"" + EscapeJson(g_chat_logs.at(i).q) + "","
-""a":"" + EscapeJson(g_chat_logs.at(i).a) + ""}";
+json += R"json({"email":")json" + EscapeJson(g_chat_logs.at(i).email) +
+R"json(","q":")json" + EscapeJson(g_chat_logs.at(i).q) +
+R"json(","a":")json" + EscapeJson(g_chat_logs.at(i).a) + R"json("})json";
 }
 json += "]";
 httpd_resp_set_type(req, "application/json");
@@ -405,9 +405,9 @@ esp_netif_ip_info_t ip_info;
 if (netif && esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
 std::string ip_buf(32, '\0');
 esp_ip4addr_ntoa(&ip_info.ip, ip_buf.data(), 32);
-return std::string("{"ip": "") + ip_buf.c_str() + ""}";
+return std::string(R"json({"ip": ")json") + ip_buf.c_str() + R"json("})json";
 }
-return "{"ip": "desconectado"}";
+return R"json({"ip": "desconectado"})json";
 }
 class ServoController {
 private:
@@ -418,9 +418,9 @@ uint32_t max_duty = 2048;
 return min_duty + ((max_duty - min_duty) * angle) / 180;
 }
 ReturnValue HandleSetAngleTool(const PropertyList& properties) {
-int angle = properties.at("angle").value();
+int angle = properties["angle"].value<int>();
 SetAngle(angle);
-return "{"status": "ok", "angle": " + std::to_string(current_angle_) + "}";
+return std::string(R"json({"status": "ok", "angle": )json") + std::to_string(current_angle_) + "}";
 }
 public:
 ServoController(gpio_num_t gpio_num) {
