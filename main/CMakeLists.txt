@@ -1211,7 +1211,6 @@ idf_component_register(SRCS ${SOURCES}
                         esp_http_server
                         esp_http_client
                         nvs_flash
-                        json
                         esp_pm
                         esp_psram
                         esp_netif
