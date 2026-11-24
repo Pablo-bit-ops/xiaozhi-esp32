@@ -864,7 +864,7 @@ private:
 
         for (const auto& prop : properties) {
             if (prop.name() == "angle") {
-                angle = prop.value();
+                angle = prop.value<int>();
                 break;
             }
         }
