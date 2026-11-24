@@ -241,8 +241,11 @@ public:
         esp_system_abort("MCP property lookup failed because the property was not declared");
     }
 
-    auto begin() { return properties_.begin(); }
-    auto end() { return properties_.end(); }
+auto begin() { return properties_.begin(); }
+auto end() { return properties_.end(); }
+
+auto begin() const { return properties_.cbegin(); }
+auto end() const { return properties_.cend(); }
 
     std::vector<std::string> GetRequired() const {
         std::vector<std::string> required;
